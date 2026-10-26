@@ -7,10 +7,18 @@ import {
 } from "lightweight-charts";
 import { demoBars, validateBars, parseCSV, sma, ema } from "./data.js";
 import "./style.css";
+import { layout } from "./layout.js";
+import { renderChain, renderLedger } from "./chain.js";
+import { icon } from "./icons.js";
 const defaults = {
   symbol: "BTC-USD",
   timeframe: "1d",
   source: "demo",
+  theme: "light",
+  chartType: "candles",
+  drawings: {},
+  chain: "base",
+  contract: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
   sma: true,
   ema: true,
   watchlist: ["BTC-USD", "ETH-USD", "SOL-USD", "SPY", "QQQ", "IWM"],
@@ -22,13 +30,18 @@ try {
   saved = JSON.parse(localStorage.getItem("oyc-v1") || "{}") || {};
 } catch {}
 const state = { ...defaults, ...saved };
-if (!["demo", "coinbase", "alpha"].includes(state.source))
-  state.source = "demo";
-if (!["1d", "1h"].includes(state.timeframe)) state.timeframe = "1d";
+if (typeof state.source !== "string") state.source = "demo";
+if (!["1m", "5m", "15m", "1h", "4h", "1d"].includes(state.timeframe))
+  state.timeframe = "1d";
 if (!Array.isArray(state.watchlist)) state.watchlist = defaults.watchlist;
 state.notes = state.notes && typeof state.notes === "object" ? state.notes : {};
 state.levels =
   state.levels && typeof state.levels === "object" ? state.levels : {};
+if (state.source !== "demo")
+  for (const field of ["notes", "levels"])
+    for (const [key, value] of Object.entries(state[field]))
+      if (!key.includes(":") && !(state.source + ":" + key in state[field]))
+        state[field][state.source + ":" + key] = structuredClone(value);
 const persist = () => {
   try {
     localStorage.setItem("oyc-v1", JSON.stringify(state));
@@ -36,14 +49,7 @@ const persist = () => {
     status("Browser storage is unavailable. Settings will not persist.", true);
   }
 };
-document.querySelector("#app").innerHTML = `
-<header><a class="brand" href="/">O<span>↗</span>C <b>OWN YOUR CHART</b></a><div class="local"><i></i> LOCAL WORKSPACE</div><a href="https://github.com/ChrisDover/own-your-chart" target="_blank" rel="noreferrer">Source ↗</a></header>
-<main><aside><div class="section-label">YOUR MARKETS <span id="watch-count"></span></div><nav id="watchlist" aria-label="Watchlist"></nav><form id="add-symbol"><label for="new-symbol">Add a symbol</label><div class="input-row"><input id="new-symbol" placeholder="e.g. AAPL" maxlength="16" required><button aria-label="Add symbol">+</button></div></form><div class="aside-bottom"><span class="eyebrow">THE STARTER, OPEN SOURCE.</span><h2>Your setup.<br>Your rules.</h2><p>Bring a feed. Build the features you actually use.</p><a href="https://x.com/ChrisDMacro/status/2105043046937104606" target="_blank" rel="noreferrer">The post that started it ↗</a></div></aside>
-<section class="workspace"><div class="workspace-heading"><div><div class="eyebrow">WORKSPACE / CHART 01</div><h1 id="symbol-title"></h1></div><div class="heading-actions"><button id="export">Export PNG ↗</button><label class="button" for="csv">Import CSV<input id="csv" type="file" accept=".csv,text/csv" hidden></label></div></div>
-<div class="toolbar"><div class="segmented" aria-label="Timeframe"><button data-timeframe="1h">1H</button><button data-timeframe="1d">1D</button></div><span class="divider"></span><label class="toggle"><input type="checkbox" id="sma">SMA 20 <i class="gold"></i></label><label class="toggle"><input type="checkbox" id="ema">EMA 50 <i class="blue"></i></label><button id="fit">Fit chart</button><select id="source" aria-label="Data source"><option value="demo">Demo / synthetic</option><option value="coinbase">Coinbase / public crypto</option><option value="alpha">Alpha Vantage / daily stocks</option></select><button id="refresh">Refresh</button></div>
-<div class="market-summary"><strong id="last-price">—</strong><span id="change"></span><span id="ohlc"></span></div><div id="chart" role="img" aria-label="Interactive candlestick and volume chart"></div><div class="chart-footer"><span id="provenance"></span><span>SCROLL TO ZOOM · DRAG TO PAN · UTC</span></div><div id="status" role="status" aria-live="polite"></div>
-<div class="lower-grid"><section class="panel"><div class="section-label">PRICE LEVELS <span>SAVED PER SYMBOL</span></div><form id="level-form"><input id="level-price" type="number" step="any" min="0.00000001" placeholder="Price" aria-label="Price level" required><button>Add level</button></form><div id="levels"></div></section><section class="panel"><div class="section-label">TRADE NOTES <span id="note-status">LOCAL STORAGE</span></div><textarea id="notes" aria-label="Trade notes" placeholder="What are you watching? Your thesis, invalidation, next decision…" maxlength="10000"></textarea></section></div>
-<footer>Charting starter · No order execution · Data entitlements belong to your provider.<br><a href="https://www.tradingview.com/" target="_blank" rel="noreferrer">TradingView Lightweight Charts™ · Copyright (с) 2025 TradingView, Inc.</a></footer></section></main>`;
+document.querySelector("#app").innerHTML = layout();
 const $ = (s) => document.querySelector(s);
 function status(message, error = false) {
   $("#status").textContent = message;
@@ -52,24 +58,24 @@ function status(message, error = false) {
 const chart = createChart($("#chart"), {
   autoSize: true,
   layout: {
-    background: { type: ColorType.Solid, color: "#101519" },
-    textColor: "#89969f",
+    background: { type: ColorType.Solid, color: "#ffffff" },
+    textColor: "#787b86",
     attributionLogo: true,
   },
-  grid: { vertLines: { color: "#1a232a" }, horzLines: { color: "#1a232a" } },
+  grid: { vertLines: { color: "#f0f3fa" }, horzLines: { color: "#f0f3fa" } },
   rightPriceScale: {
-    borderColor: "#263039",
+    borderColor: "#e0e3eb",
     scaleMargins: { top: 0.12, bottom: 0.24 },
   },
-  timeScale: { borderColor: "#263039", timeVisible: true },
+  timeScale: { borderColor: "#e0e3eb", timeVisible: true },
   crosshair: { mode: 0 },
 });
 const candles = chart.addSeries(CandlestickSeries, {
-  upColor: "#6ccea7",
-  downColor: "#e78586",
+  upColor: "#26a69a",
+  downColor: "#ef5350",
   borderVisible: false,
-  wickUpColor: "#6ccea7",
-  wickDownColor: "#e78586",
+  wickUpColor: "#26a69a",
+  wickDownColor: "#ef5350",
 });
 const volume = chart.addSeries(HistogramSeries, {
   priceFormat: { type: "volume" },
@@ -102,8 +108,10 @@ function watchlist() {
     row.className = "watch-row";
     const b = document.createElement("button");
     b.textContent = symbol;
+    b.setAttribute("aria-label", symbol);
     b.className = symbol === state.symbol ? "selected" : "";
     b.onclick = () => {
+      document.querySelector(".terminal").classList.remove("show-watchlist");
       state.symbol = symbol;
       persist();
       load();
@@ -117,7 +125,17 @@ function watchlist() {
       persist();
       watchlist();
     };
-    row.append(b, remove);
+    const quote = document.createElement("span");
+    quote.className = "watch-quote";
+    const q = quotes.get(state.source + ":" + symbol + ":" + state.timeframe);
+    quote.textContent = q
+      ? q.last.toLocaleString("en-US", { maximumFractionDigits: 2 })
+      : "—";
+    const delta = document.createElement("span");
+    delta.className = "watch-delta";
+    delta.textContent = q ? q.change.toFixed(2) + "%" : "—";
+    if (q) delta.style.color = q.change >= 0 ? "#26a69a" : "#ef5350";
+    row.append(b, quote, delta, remove);
     nav.append(row);
   });
   $("#watch-count").textContent = state.watchlist.length;
@@ -127,12 +145,14 @@ function indicators() {
   emaLine.setData(state.ema ? ema(bars, 50) : []);
 }
 function levels() {
-  lines.forEach((l) => candles.removePriceLine(l));
+  lines.forEach(({ series, line }) => series.removePriceLine(line));
   lines = [];
   $("#levels").replaceChildren();
-  (state.levels[state.symbol] || []).forEach((price, i) => {
-    lines.push(
-      candles.createPriceLine({
+  (state.levels[marketKey()] || []).forEach((price, i) => {
+    const series = state.chartType === "line" ? closeLine : candles;
+    lines.push({
+      series,
+      line: series.createPriceLine({
         price,
         color: "#d4b875",
         lineWidth: 1,
@@ -140,13 +160,13 @@ function levels() {
         axisLabelVisible: true,
         title: "Level",
       }),
-    );
+    });
     const b = document.createElement("button");
     b.className = "level";
     b.textContent = `${price.toLocaleString()} ×`;
     b.setAttribute("aria-label", `Remove level ${price}`);
     b.onclick = () => {
-      state.levels[state.symbol].splice(i, 1);
+      state.levels[marketKey()].splice(i, 1);
       persist();
       levels();
     };
@@ -165,22 +185,43 @@ function render(data, label) {
     bars.map((b) => ({
       time: b.time,
       value: b.volume,
-      color: b.close >= b.open ? "#6ccea733" : "#e7858633",
+      color: b.close >= b.open ? "#26a69a66" : "#ef535066",
     })),
   );
   indicators();
   levels();
+  renderDrawings();
+  applyChartType();
   chart.timeScale().fitContent();
   const last = bars.at(-1),
     prev = bars.at(-2) || last;
   $("#last-price").textContent = last.close.toLocaleString("en-US", {
     minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
+    maximumFractionDigits: last.close < 1 ? 8 : 2,
   });
+  const precision = last.close < 1 ? 8 : 2;
+  for (const series of [candles, closeLine, smaLine, emaLine])
+    series.applyOptions({
+      priceFormat: { type: "price", precision, minMove: 10 ** -precision },
+    });
   const change = (last.close / prev.close - 1) * 100;
   $("#change").textContent =
     `${change >= 0 ? "+" : ""}${change.toFixed(2)}% vs previous bar`;
-  $("#change").style.color = change >= 0 ? "#6ccea7" : "#e78586";
+  $("#change").style.color = change >= 0 ? "#26a69a" : "#ef5350";
+  if (!label.startsWith("IMPORTED"))
+    quotes.set(state.source + ":" + state.symbol + ":" + state.timeframe, {
+      last: last.close,
+      change,
+    });
+  $("#market-kind").textContent = label.startsWith("IMPORTED")
+    ? "IMPORTED CSV"
+    : state.source === "demo"
+      ? "SYNTHETIC"
+      : state.source === "hyperliquid"
+        ? "PERPETUAL"
+        : "HISTORICAL";
+  $("#detail-source").textContent = label + " · manual refresh";
+  watchlist();
   summary(last);
   $("#provenance").textContent =
     `${label} · ${bars.length} bars · last ${new Date(last.time * 1000).toISOString().replace(".000Z", " UTC")}`;
@@ -191,16 +232,46 @@ async function load() {
   bars = [];
   candles.setData([]);
   volume.setData([]);
+  closeLine.setData([]);
   smaLine.setData([]);
   emaLine.setData([]);
-  lines.forEach((l) => candles.removePriceLine(l));
+  lines.forEach(({ series, line }) => series.removePriceLine(line));
   lines = [];
   $("#levels").replaceChildren();
   $("#last-price").textContent = "—";
   $("#change").textContent = "";
   summary();
   $("#symbol-title").textContent = state.symbol;
-  $("#notes").value = state.notes[state.symbol] || "";
+  $("#top-symbol").textContent = state.symbol;
+  $("#detail-symbol").textContent = state.symbol;
+  $("#detail-icon").textContent = state.symbol.startsWith("BTC")
+    ? "₿"
+    : state.symbol.startsWith("ETH")
+      ? "Ξ"
+      : "◎";
+  $("#interval-title").textContent = state.timeframe.toUpperCase();
+  const provider = providerList.find((p) => p.id === state.source);
+  $("#venue-title").textContent = provider?.name || state.source;
+  $("#market-kind").textContent =
+    state.source === "demo"
+      ? "SYNTHETIC"
+      : state.source === "hyperliquid"
+        ? "PERPETUAL"
+        : "HISTORICAL";
+  $("#detail-description").textContent =
+    provider?.kind || "Your configured provider";
+  $("#detail-source").textContent =
+    (provider?.name || state.source) + " · manual refresh";
+  document
+    .querySelectorAll("[data-timeframe]")
+    .forEach(
+      (b) =>
+        (b.disabled = provider
+          ? !provider.timeframes.includes(b.dataset.timeframe)
+          : false),
+    );
+  clearDrawingSeries();
+  $("#notes").value = state.notes[marketKey()] || "";
   $("#source").value = state.source;
   $("#sma").checked = state.sma;
   $("#ema").checked = state.ema;
@@ -240,6 +311,9 @@ chart.subscribeCrosshairMove((p) =>
 );
 $("#source").onchange = (e) => {
   state.source = e.target.value;
+  const p = providerList.find((p) => p.id === state.source);
+  if (p && !p.timeframes.includes(state.timeframe))
+    state.timeframe = p.timeframes.includes("1h") ? "1h" : p.timeframes[0];
   persist();
   load();
 };
@@ -284,7 +358,7 @@ $("#level-form").onsubmit = (e) => {
   }
   const price = Number($("#level-price").value);
   if (!Number.isFinite(price) || price <= 0) return;
-  const list = (state.levels[state.symbol] ||= []);
+  const list = (state.levels[marketKey()] ||= []);
   if (list.length >= 20) {
     status("Limit: 20 levels per symbol.", true);
     return;
@@ -295,7 +369,7 @@ $("#level-form").onsubmit = (e) => {
   levels();
 };
 $("#notes").oninput = (e) => {
-  state.notes[state.symbol] = e.target.value;
+  state.notes[marketKey()] = e.target.value;
   persist();
 };
 $("#csv").onchange = async (e) => {
@@ -331,4 +405,386 @@ $("#export").onclick = () => {
   a.href = chart.takeScreenshot().toDataURL();
   a.click();
 };
-load();
+
+const quotes = new Map();
+let providerList = [];
+let tool = "crosshair",
+  pendingPoint = null,
+  drawingSeries = [];
+state.drawings =
+  state.drawings && typeof state.drawings === "object" ? state.drawings : {};
+const closeLine = chart.addSeries(LineSeries, {
+  color: "#2962ff",
+  lineWidth: 2,
+  visible: false,
+});
+const marketKey = () =>
+  state.source === "demo" ? state.symbol : state.source + ":" + state.symbol;
+const drawingKey = () => marketKey() + ":" + state.timeframe;
+function clearDrawingSeries() {
+  drawingSeries.forEach((s) => chart.removeSeries(s));
+  drawingSeries = [];
+  pendingPoint = null;
+}
+function renderDrawings() {
+  clearDrawingSeries();
+  for (const item of state.drawings[drawingKey()] || []) {
+    const series = chart.addSeries(LineSeries, {
+      color: "#2962ff",
+      lineWidth: 2,
+      priceLineVisible: false,
+      lastValueVisible: false,
+      crosshairMarkerVisible: false,
+    });
+    series.setData(item.points);
+    drawingSeries.push(series);
+  }
+}
+function applyChartType() {
+  closeLine.setData(bars.map((b) => ({ time: b.time, value: b.close })));
+  closeLine.applyOptions({ visible: state.chartType === "line" });
+  candles.applyOptions({ visible: state.chartType !== "line" });
+  $("#chart-type").innerHTML = icon(
+    state.chartType === "line" ? "line" : "candle",
+  );
+  levels();
+}
+function setTool(next) {
+  tool = next;
+  pendingPoint = null;
+  document
+    .querySelectorAll("[data-tool]")
+    .forEach((b) => b.classList.toggle("active", b.dataset.tool === tool));
+  $("#tool-hint").textContent =
+    tool === "crosshair"
+      ? "Scroll to zoom · drag to pan"
+      : tool === "horizontal"
+        ? "Click the chart to place a price level"
+        : "Click two points on the chart";
+}
+function drawPoint(p) {
+  if (tool === "crosshair" || !p.point || !p.time || !bars.length) return;
+  const series = state.chartType === "line" ? closeLine : candles;
+  const price = series.coordinateToPrice(p.point.y);
+  if (price == null || price <= 0) return;
+  const point = { time: p.time, value: price };
+  if (tool === "horizontal") {
+    const list = (state.levels[marketKey()] ||= []);
+    if (list.length >= 20) return;
+    list.push(price);
+    persist();
+    levels();
+    setTool("crosshair");
+    return;
+  }
+  if (!pendingPoint) {
+    pendingPoint = point;
+    $("#tool-hint").textContent = "Choose the second point";
+    return;
+  }
+  const first = pendingPoint;
+  pendingPoint = null;
+  if (first.time === point.time) {
+    status("Choose points on different bars.", true);
+    return;
+  }
+  if (tool === "ruler") {
+    status(
+      `Measured ${((point.value / first.value - 1) * 100).toFixed(2)}% · ${Math.abs(bars.findIndex((b) => b.time === point.time) - bars.findIndex((b) => b.time === first.time))} bars`,
+      false,
+    );
+    setTool("crosshair");
+    return;
+  }
+  const list = (state.drawings[drawingKey()] ||= []);
+  if (list.length >= 20) {
+    status("Limit: 20 trend lines per market/timeframe.", true);
+    return;
+  }
+  list.push({ points: [first, point].sort((a, b) => a.time - b.time) });
+  persist();
+  renderDrawings();
+  setTool("crosshair");
+}
+// Use native clicks while drawing: the renderer suppresses a rapid second click
+// even when it occurs at a different position (its double-click detection).
+$("#chart").addEventListener(
+  "click",
+  (e) => {
+    if (tool === "crosshair") return;
+    const rect = $("#chart").getBoundingClientRect();
+    const point = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+    if (point.y > rect.height - 30) return;
+    const time = chart.timeScale().coordinateToTime(point.x);
+    e.preventDefault();
+    e.stopPropagation();
+    drawPoint({ point, time });
+  },
+  true,
+);
+document
+  .querySelectorAll("[data-tool]")
+  .forEach((b) => (b.onclick = () => setTool(b.dataset.tool)));
+setTool("crosshair");
+$("#clear-drawings").onclick = () => {
+  state.drawings[drawingKey()] = [];
+  persist();
+  renderDrawings();
+  setTool("crosshair");
+};
+$("#chart-type").onclick = () => {
+  state.chartType = state.chartType === "line" ? "candles" : "line";
+  persist();
+  applyChartType();
+};
+function applyTheme() {
+  document.documentElement.dataset.theme = state.theme;
+  const dark = state.theme === "dark";
+  chart.applyOptions({
+    layout: {
+      background: {
+        type: ColorType.Solid,
+        color: dark ? "#131722" : "#ffffff",
+      },
+      textColor: dark ? "#b2b5be" : "#787b86",
+    },
+    grid: {
+      vertLines: { color: dark ? "#1e222d" : "#f0f3fa" },
+      horzLines: { color: dark ? "#1e222d" : "#f0f3fa" },
+    },
+    rightPriceScale: { borderColor: dark ? "#2a2e39" : "#e0e3eb" },
+    timeScale: { borderColor: dark ? "#2a2e39" : "#e0e3eb" },
+  });
+}
+$("#theme").onclick = () => {
+  state.theme = state.theme === "dark" ? "light" : "dark";
+  persist();
+  applyTheme();
+};
+applyTheme();
+$("#indicator-toggle").onclick = () => {
+  $("#indicator-controls").hidden = !$("#indicator-controls").hidden;
+};
+function showPanel(panel) {
+  document.querySelectorAll("[data-panel]").forEach((b) => {
+    const active = b.dataset.panel === panel;
+    b.setAttribute("aria-selected", String(active));
+    $("#panel-" + b.dataset.panel).hidden = !active;
+  });
+}
+document
+  .querySelectorAll("[data-panel]")
+  .forEach((b) => (b.onclick = () => showPanel(b.dataset.panel)));
+$("#notes-shortcut").onclick = () => showPanel("notes");
+$("#chain-shortcut").onclick = () => showPanel("chain");
+$("#data-shortcut").onclick = () => showPanel("data");
+$("#connections-open").onclick = () => showPanel("data");
+$("#watch-toggle").onclick = () =>
+  document.querySelector(".terminal").classList.toggle("hide-watchlist");
+for (const id of ["symbol-search", "watch-add"])
+  $("#" + id).onclick = () => {
+    document.querySelector(".terminal").classList.add("show-watchlist");
+    $("#add-symbol").classList.add("expanded");
+    $("#new-symbol").focus();
+  };
+document.querySelectorAll("[data-range]").forEach(
+  (b) =>
+    (b.onclick = () => {
+      if (!bars.length) return;
+      const days = Number(b.dataset.range);
+      if (!days) {
+        chart.timeScale().fitContent();
+        return;
+      }
+      const to = bars.at(-1).time;
+      chart
+        .timeScale()
+        .setVisibleRange({
+          from: Math.max(bars[0].time, to - days * 86400),
+          to,
+        });
+    }),
+);
+async function refreshProviders() {
+  const r = await fetch("/api/providers");
+  if (!r.ok) throw new Error("Could not load provider configuration.");
+  providerList = await r.json();
+  const select = $("#source");
+  select.replaceChildren();
+  $("#provider-cards").replaceChildren();
+  for (const p of providerList) {
+    const o = document.createElement("option");
+    o.value = p.id;
+    o.textContent = p.name;
+    select.append(o);
+    const card = document.createElement("article");
+    const h = document.createElement("h3");
+    h.textContent = p.name;
+    const badge = document.createElement("span");
+    badge.className = "provider-badge";
+    badge.textContent =
+      p.id === "demo" ? "SYNTHETIC" : p.free ? "NO KEY" : "YOUR CONNECTION";
+    const description = document.createElement("p");
+    description.textContent = p.kind;
+    const periods = document.createElement("small");
+    periods.textContent = p.timeframes.join(" · ").toUpperCase();
+    const use = document.createElement("button");
+    use.textContent = "Use feed";
+    use.onclick = () => {
+      state.source = p.id;
+      if (!p.timeframes.includes(state.timeframe))
+        state.timeframe = p.timeframes[0];
+      if (p.symbols.length && !p.symbols.includes(state.symbol))
+        state.symbol = p.symbols[0];
+      persist();
+      load();
+    };
+    card.append(h, badge, description, periods, use);
+    $("#provider-cards").append(card);
+  }
+  select.value = state.source;
+}
+const dialog = $("#connection-dialog");
+$("#add-connection").onclick = () => dialog.showModal();
+$("#connection-close").onclick = () => dialog.close();
+$("#connection-form").onsubmit = async (e) => {
+  e.preventDefault();
+  const c = {
+    id: $("#connection-id").value.trim(),
+    name: $("#connection-name").value.trim(),
+    url: $("#connection-url").value.trim(),
+    symbols: $("#connection-symbols")
+      .value.split(",")
+      .map((s) => s.trim().toUpperCase())
+      .filter(Boolean),
+    key_env: $("#connection-env").value.trim(),
+    key_header: $("#connection-header").value,
+    bearer: $("#connection-bearer").checked,
+  };
+  try {
+    const r = await fetch("/api/connections", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(c),
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error);
+    await refreshProviders();
+    state.source = data.id;
+    persist();
+    dialog.close();
+    load();
+  } catch (err) {
+    $("#connection-status").textContent = err.message;
+  }
+};
+
+let chainData = null,
+  vizMode = "flow",
+  wallet = null,
+  scanGeneration = 0;
+const defaultContracts = {
+  base: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+  ethereum: "0xA0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+};
+$("#chain").value = state.chain;
+$("#contract").value = state.contract;
+function chainView() {
+  if (!chainData) return;
+  renderChain($("#chain-viz"), chainData, vizMode, (address) => {
+    wallet = address;
+    $("#reset-wallet").hidden = false;
+    renderLedger($("#transfers"), chainData, wallet);
+  });
+  renderLedger($("#transfers"), chainData, wallet);
+  document
+    .querySelectorAll("[data-viz]")
+    .forEach((b) => b.classList.toggle("active", b.dataset.viz === vizMode));
+}
+function invalidateScan() {
+  ++scanGeneration;
+  chainData = null;
+  $("#chain-results").hidden = true;
+  $("#scan").disabled = false;
+  $("#chain-status").textContent =
+    "Contract changed. Scan to load this token’s transfer events.";
+}
+$("#chain").onchange = (e) => {
+  state.chain = e.target.value;
+  state.contract = defaultContracts[state.chain];
+  $("#contract").value = state.contract;
+  persist();
+  invalidateScan();
+};
+$("#contract").oninput = () => invalidateScan();
+$("#scan-window").onchange = invalidateScan;
+$("#scan").onclick = async () => {
+  const id = ++scanGeneration;
+  state.chain = $("#chain").value;
+  state.contract = $("#contract").value.trim();
+  persist();
+  $("#scan").disabled = true;
+  $("#chain-results").hidden = true;
+  $("#chain-status").textContent =
+    "Reading chain ID, latest block, decimals and transfer logs…";
+  try {
+    const r = await fetch(
+      "/api/onchain?" +
+        new URLSearchParams({
+          chain: state.chain,
+          address: state.contract,
+          window: $("#scan-window").value,
+        }),
+    );
+    const data = await r.json();
+    if (id !== scanGeneration) return;
+    if (!r.ok) throw new Error(data.error || "Scan failed.");
+    chainData = data;
+    wallet = null;
+    $("#reset-wallet").hidden = true;
+    $("#chain-results").hidden = false;
+    $("#chain-status").textContent = data.label;
+    $("#chain-stats").replaceChildren();
+    const wallets = new Set(
+      data.transfers
+        .flatMap((t) => [t.from, t.to])
+        .filter((a) => a !== "0x" + "0".repeat(40)),
+    );
+    for (const [name, value] of [
+      ["Transfers matched", data.matched_count],
+      ["Transfers displayed", data.transfers.length],
+      ["Wallets in sample", wallets.size],
+      ["Block window", `${data.from_block}–${data.to_block}`],
+    ]) {
+      const box = document.createElement("div");
+      const label = document.createElement("span");
+      label.textContent = name;
+      const v = document.createElement("strong");
+      v.textContent = String(value);
+      box.append(label, v);
+      $("#chain-stats").append(box);
+    }
+    $("#chain-provenance").textContent =
+      `${data.chain.toUpperCase()} · ${data.address} · ${data.decimals} decimals · scanned ${new Date(data.fetched_at * 1000).toISOString()} · ${data.truncated ? "LATEST 200 EVENTS ONLY" : "ALL MATCHING EVENTS IN WINDOW"} · Transfers are not trades, exchange flows, or holder balances.`;
+    chainView();
+  } catch (err) {
+    if (id === scanGeneration) $("#chain-status").textContent = err.message;
+  } finally {
+    if (id === scanGeneration) $("#scan").disabled = false;
+  }
+};
+document.querySelectorAll("[data-viz]").forEach(
+  (b) =>
+    (b.onclick = () => {
+      vizMode = b.dataset.viz;
+      chainView();
+    }),
+);
+$("#reset-wallet").onclick = () => {
+  wallet = null;
+  $("#reset-wallet").hidden = true;
+  chainView();
+};
+refreshProviders()
+  .then(() => load())
+  .catch((e) => status(e.message, true));

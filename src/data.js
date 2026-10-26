@@ -60,7 +60,10 @@ export function parseCSV(text) {
             );
           const datePart = row.time.slice(0, 10);
           const calendar = new Date(datePart + "T00:00:00Z");
-          if (!Number.isFinite(calendar.getTime()) || calendar.toISOString().slice(0,10) !== datePart)
+          if (
+            !Number.isFinite(calendar.getTime()) ||
+            calendar.toISOString().slice(0, 10) !== datePart
+          )
             throw new Error("Invalid calendar date.");
           row.time = Date.parse(row.time) / 1000;
         }
@@ -100,7 +103,10 @@ export function demoBars(symbol = "BTC-USD", timeframe = "1d") {
       QQQ: 480,
       IWM: 210,
     }[symbol] || 100;
-  const step = timeframe === "1h" ? 3600 : 86400;
+  const step =
+    { "1m": 60, "5m": 300, "15m": 900, "1h": 3600, "4h": 14400, "1d": 86400 }[
+      timeframe
+    ] || 86400;
   const end = Date.UTC(2026, 8, 25) / 1000;
   return Array.from({ length: 300 }, (_, i) => {
     const open = close;
