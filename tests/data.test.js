@@ -65,6 +65,10 @@ test("CSV rejects ambiguous local timestamps and empty fields", () => {
     /Missing/,
   );
 });
-test('CSV rejects impossible calendar dates before parsing',()=>{
- for(const date of ['2026-02-30','2026-02-30T12:00:00Z']) assert.throws(()=>parseCSV(`time,open,high,low,close,volume\n${date},1,2,0.5,1,5`),/calendar/);
+test("CSV rejects impossible calendar dates before parsing", () => {
+  for (const date of ["2026-02-30", "2026-02-30T12:00:00Z"])
+    assert.throws(
+      () => parseCSV(`time,open,high,low,close,volume\n${date},1,2,0.5,1,5`),
+      /calendar/,
+    );
 });
